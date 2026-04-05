@@ -1,0 +1,23 @@
+{
+  "name": "@studio/bot",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@studio/database": "workspace:*",
+    "@studio/types": "workspace:*",
+    "@studio/utils": "workspace:*",
+    "grammy": "^1.31.0",
+    "bullmq": "^5.30.0",
+    "ioredis": "^5.4.0",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

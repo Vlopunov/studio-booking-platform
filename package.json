@@ -1,0 +1,18 @@
+{
+  "name": "studio-booking-marketing",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "db:generate": "pnpm --filter @studio/database generate",
+    "db:push": "pnpm --filter @studio/database push",
+    "db:seed": "pnpm --filter @studio/database seed",
+    "db:studio": "pnpm --filter @studio/database studio"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0",
+    "typescript": "^5.7.0"
+  }
+}
