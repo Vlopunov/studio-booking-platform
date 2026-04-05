@@ -1,4 +1,11 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+function getApiUrl(): string {
+  if (typeof window !== "undefined") {
+    // In browser: use same origin /api proxy, or fall back to env
+    const envUrl = (window as any).__NEXT_PUBLIC_API_URL;
+    if (envUrl) return envUrl;
+  }
+  return process.env.NEXT_PUBLIC_API_URL || "https://api-production-044c.up.railway.app";
+}
 
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -10,7 +17,7 @@ async function request<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const token = getToken();
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${getApiUrl()}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",

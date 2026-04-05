@@ -8,7 +8,10 @@ COPY . .
 
 RUN pnpm install --no-frozen-lockfile
 
-# Build Next.js
+# NEXT_PUBLIC_ vars must be set at build time
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+
 RUN pnpm --filter @studio/admin build
 
 ENV PORT=3000

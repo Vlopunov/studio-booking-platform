@@ -23,7 +23,18 @@ import { adminsRouter } from "./routes/admins";
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-app.use(cors({ origin: process.env.ADMIN_URL || "http://localhost:3000" }));
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin) return callback(null, true);
+    // Allow railway.app, localhost
+    if (origin.includes("railway.app") || origin.includes("localhost")) {
+      return callback(null, true);
+    }
+    callback(null, true); // Allow all for now
+  },
+  credentials: true,
+}));
 app.use(express.json());
 
 // Public
