@@ -16,4 +16,5 @@ RUN cd packages/database && npx prisma generate
 ENV PORT=4000
 EXPOSE 4000
 
-CMD ["pnpm", "--filter", "@studio/api", "dev"]
+# Migrate DB and start
+CMD sh -c "cd packages/database && npx prisma db push --skip-generate && npx prisma db seed || true && cd /app && pnpm --filter @studio/api dev"
