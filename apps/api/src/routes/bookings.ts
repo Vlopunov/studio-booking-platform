@@ -88,8 +88,17 @@ bookingsRouter.get("/", async (req: AuthRequest, res: Response) => {
       prisma.booking.count({ where }),
     ]);
 
+    // Normalize: add flat clientName/venueName/totalPrice for admin consumption
+    const normalized = bookings.map((b: any) => ({
+      ...b,
+      clientName: [b.client?.firstName, b.client?.lastName].filter(Boolean).join(" "),
+      clientPhone: b.client?.phone || "",
+      venueName: b.venue?.name || "",
+      totalPrice: Number(b.finalPrice || 0),
+    }));
+
     res.json({
-      data: bookings,
+      data: normalized,
       total,
       page: parseInt(page),
       totalPages: Math.ceil(total / take),
@@ -167,7 +176,13 @@ bookingsRouter.get("/:id", async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    res.json(booking);
+    res.json({
+      ...booking,
+      clientName: [booking.client?.firstName, booking.client?.lastName].filter(Boolean).join(" "),
+      clientPhone: booking.client?.phone || "",
+      venueName: booking.venue?.name || "",
+      totalPrice: Number(booking.finalPrice || 0),
+    });
   } catch (err) {
     console.error("Get booking error:", err);
     res.status(500).json({ error: "Failed to get booking" });

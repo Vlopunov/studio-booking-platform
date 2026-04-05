@@ -48,8 +48,14 @@ reviewsRouter.get("/", async (req: AuthRequest, res: Response) => {
       prisma.review.count({ where }),
     ]);
 
+    const normalized = reviews.map((r: any) => ({
+      ...r,
+      clientName: [r.client?.firstName, r.client?.lastName].filter(Boolean).join(" "),
+      venueName: r.booking?.venue?.name || "",
+    }));
+
     res.json({
-      data: reviews,
+      data: normalized,
       total,
       page: parseInt(page),
       totalPages: Math.ceil(total / take),

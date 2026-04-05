@@ -7,16 +7,20 @@ import { useApi } from "@/lib/hooks";
 interface Booking {
   id: string;
   humanId: string;
-  clientName: string;
-  clientPhone: string;
-  venueName: string;
+  client?: { firstName: string; lastName?: string | null; phone?: string | null; loyaltyTier?: string };
+  venue?: { name: string };
   venueId: string;
   date: string;
   startTime: string;
   endTime: string;
   status: "PENDING" | "CONFIRMED" | "COMPLETED" | "CANCELLED" | "NO_SHOW";
-  totalPrice: number;
+  finalPrice: string | number;
 }
+
+function bName(b: Booking) { return b.client ? [b.client.firstName, b.client.lastName].filter(Boolean).join(" ") : "—"; }
+function bVenue(b: Booking) { return b.venue?.name || "—"; }
+function bPrice(b: Booking) { return Number(b.finalPrice || 0); }
+function bPhone(b: Booking) { return b.client?.phone || ""; }
 
 interface Venue {
   id: string;
@@ -94,12 +98,12 @@ export default function BookingsPage() {
     const headers = ["ID", "Клиент", "Площадка", "Дата", "Время", "Статус", "Цена"];
     const rows = bookings.map((b) => [
       b.humanId,
-      b.clientName,
-      b.venueName,
+      bName(b),
+      bVenue(b),
       b.date,
       `${b.startTime}-${b.endTime}`,
       b.status,
-      b.totalPrice,
+      bPrice(b),
     ]);
     const csv = [headers, ...rows].map((r) => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
