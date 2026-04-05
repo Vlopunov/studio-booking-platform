@@ -74,7 +74,7 @@ function computeTier(
 }
 
 export default function LoyaltyPage() {
-  const { data, loading } = useApi<LoyaltySettings>("/admin/loyalty-settings");
+  const { data, loading } = useApi<LoyaltySettings>("/api/loyalty/settings");
   const [settings, setSettings] = useState<LoyaltySettings>(defaultSettings);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -91,7 +91,7 @@ export default function LoyaltyPage() {
     setSaving(true);
     setSaved(false);
     try {
-      await api.patch("/admin/loyalty-settings", settings);
+      await api.patch("/api/loyalty/settings", settings);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } finally {

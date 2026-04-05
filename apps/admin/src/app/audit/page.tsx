@@ -53,7 +53,7 @@ export default function AuditPage() {
   }, [adminFilter, actionFilter, entityFilter, dateFrom, dateTo]);
 
   const { data: entries, loading } = useApi<AuditEntry[]>(
-    `/admin/audit?${queryParams}`,
+    `/api/audit?${queryParams}`,
     [queryParams]
   );
 

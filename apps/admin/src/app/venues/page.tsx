@@ -49,7 +49,7 @@ const TYPE_BADGES: Record<string, string> = {
 };
 
 export default function VenuesPage() {
-  const { data: venues, loading, refetch } = useApi<Venue[]>("/admin/venues");
+  const { data: venues, loading, refetch } = useApi<Venue[]>("/api/venues");
   const [editingVenue, setEditingVenue] = useState<Venue | null>(null);
   const [expandedVenue, setExpandedVenue] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -91,9 +91,9 @@ export default function VenuesPage() {
     setSaving(true);
     try {
       if (editingVenue?.id) {
-        await api.patch(`/admin/venues/${editingVenue.id}`, form);
+        await api.patch(`/api/venues/${editingVenue.id}`, form);
       } else {
-        await api.post("/admin/venues", form);
+        await api.post("/api/venues", form);
       }
       setEditingVenue(null);
       refetch();

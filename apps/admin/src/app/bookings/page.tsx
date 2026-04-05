@@ -53,10 +53,10 @@ export default function BookingsPage() {
   }, [search, venueFilter, statusFilter, dateFrom, dateTo]);
 
   const { data: bookings, loading, refetch } = useApi<Booking[]>(
-    `/admin/bookings?${queryParams}`,
+    `/api/bookings?${queryParams}`,
     [queryParams]
   );
-  const { data: venues } = useApi<Venue[]>("/admin/venues");
+  const { data: venues } = useApi<Venue[]>("/api/venues");
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
@@ -81,7 +81,7 @@ export default function BookingsPage() {
     const status = action === "confirm" ? "CONFIRMED" : "CANCELLED";
     await Promise.all(
       Array.from(selected).map((id) =>
-        api.patch(`/admin/bookings/${id}/status`, { status })
+        api.patch(`/api/bookings/${id}/status`, { status })
       )
     );
     setSelected(new Set());

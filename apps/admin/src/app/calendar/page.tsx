@@ -60,13 +60,13 @@ export default function CalendarPage() {
   const weekStart = formatDate(weekDates[0]);
   const weekEnd = formatDate(weekDates[6]);
 
-  const { data: venues } = useApi<Venue[]>("/admin/venues");
+  const { data: venues } = useApi<Venue[]>("/api/venues");
 
   const venueId = activeVenueId || venues?.[0]?.id || "";
 
   const { data: bookings } = useApi<CalendarBooking[]>(
     venueId
-      ? `/admin/bookings?venueId=${venueId}&dateFrom=${weekStart}&dateTo=${weekEnd}`
+      ? `/api/bookings?venueId=${venueId}&dateFrom=${weekStart}&dateTo=${weekEnd}`
       : "",
     [venueId, weekStart, weekEnd]
   );

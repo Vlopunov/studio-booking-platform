@@ -40,7 +40,7 @@ export default function ClientsPage() {
   }, [search, tierFilter, tagFilter]);
 
   const { data: clients, loading } = useApi<Client[]>(
-    `/admin/clients?${queryParams}`,
+    `/api/clients?${queryParams}`,
     [queryParams]
   );
 

@@ -38,19 +38,19 @@ export default function ReviewsPage() {
   }, [venueFilter, ratingFilter, publicFilter]);
 
   const { data: reviews, loading, refetch } = useApi<Review[]>(
-    `/admin/reviews?${queryParams}`,
+    `/api/reviews?${queryParams}`,
     [queryParams]
   );
-  const { data: venues } = useApi<Venue[]>("/admin/venues");
+  const { data: venues } = useApi<Venue[]>("/api/venues");
 
   const togglePublic = async (id: string, current: boolean) => {
-    await api.patch(`/admin/reviews/${id}`, { isPublic: !current });
+    await api.patch(`/api/reviews/${id}`, { isPublic: !current });
     refetch();
   };
 
   const sendReply = async (id: string) => {
     if (!replyText.trim()) return;
-    await api.patch(`/admin/reviews/${id}`, { adminReply: replyText });
+    await api.patch(`/api/reviews/${id}`, { adminReply: replyText });
     setReplyingTo(null);
     setReplyText("");
     refetch();

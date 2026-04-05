@@ -72,7 +72,7 @@ export default function BookingDetailPage() {
   const bookingId = params.id as string;
 
   const { data: booking, loading, refetch } = useApi<BookingDetail>(
-    `/admin/bookings/${bookingId}`
+    `/api/bookings/${bookingId}`
   );
 
   const [adminNote, setAdminNote] = useState("");
@@ -88,7 +88,7 @@ export default function BookingDetailPage() {
   const handleStatusChange = async (status: string) => {
     setSaving(true);
     try {
-      await api.patch(`/admin/bookings/${bookingId}/status`, { status });
+      await api.patch(`/api/bookings/${bookingId}/status`, { status });
       setConfirmAction(null);
       refetch();
     } finally {
@@ -99,7 +99,7 @@ export default function BookingDetailPage() {
   const saveNote = async () => {
     setSaving(true);
     try {
-      await api.patch(`/admin/bookings/${bookingId}`, { adminNote });
+      await api.patch(`/api/bookings/${bookingId}`, { adminNote });
     } finally {
       setSaving(false);
     }

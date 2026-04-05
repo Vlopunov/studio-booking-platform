@@ -32,9 +32,9 @@ const TYPE_LABELS: Record<string, string> = {
 
 export default function PromocodesPage() {
   const { data: promocodes, loading, refetch } = useApi<Promocode[]>(
-    "/admin/promocodes"
+    "/api/promocodes"
   );
-  const { data: venues } = useApi<Venue[]>("/admin/venues");
+  const { data: venues } = useApi<Venue[]>("/api/venues");
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -51,7 +51,7 @@ export default function PromocodesPage() {
   const createPromocode = async () => {
     setSaving(true);
     try {
-      await api.post("/admin/promocodes", {
+      await api.post("/api/promocodes", {
         ...form,
         maxUses: form.maxUses ? Number(form.maxUses) : null,
         venueId: form.venueId || null,
@@ -73,7 +73,7 @@ export default function PromocodesPage() {
   };
 
   const toggleActive = async (id: string, isActive: boolean) => {
-    await api.patch(`/admin/promocodes/${id}`, { isActive: !isActive });
+    await api.patch(`/api/promocodes/${id}`, { isActive: !isActive });
     refetch();
   };
 

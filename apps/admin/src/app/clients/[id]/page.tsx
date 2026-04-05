@@ -67,7 +67,7 @@ export default function ClientProfilePage() {
   const clientId = params.id as string;
 
   const { data: client, loading, refetch } = useApi<ClientProfile>(
-    `/admin/clients/${clientId}`
+    `/api/clients/${clientId}`
   );
 
   const [tags, setTags] = useState<string[]>([]);
@@ -93,19 +93,19 @@ export default function ClientProfilePage() {
     const updated = [...tags, newTag.trim()];
     setTags(updated);
     setNewTag("");
-    api.patch(`/admin/clients/${clientId}`, { tags: updated });
+    api.patch(`/api/clients/${clientId}`, { tags: updated });
   };
 
   const removeTag = (tag: string) => {
     const updated = tags.filter((t) => t !== tag);
     setTags(updated);
-    api.patch(`/admin/clients/${clientId}`, { tags: updated });
+    api.patch(`/api/clients/${clientId}`, { tags: updated });
   };
 
   const saveNotes = async () => {
     setSaving(true);
     try {
-      await api.patch(`/admin/clients/${clientId}`, { adminNotes });
+      await api.patch(`/api/clients/${clientId}`, { adminNotes });
     } finally {
       setSaving(false);
     }
@@ -116,7 +116,7 @@ export default function ClientProfilePage() {
     if (!amount || amount <= 0) return;
     setSaving(true);
     try {
-      await api.post(`/admin/clients/${clientId}/bonus`, {
+      await api.post(`/api/clients/${clientId}/bonus`, {
         amount: type === "add" ? amount : -amount,
         reason: bonusReason,
       });
