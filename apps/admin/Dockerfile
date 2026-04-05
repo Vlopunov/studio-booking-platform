@@ -1,22 +1,14 @@
-FROM node:20-alpine AS base
-RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+FROM node:20-alpine
+
+RUN npm install -g pnpm@9.15.0
 
 WORKDIR /app
 
-# Copy workspace files
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
-COPY tsconfig.base.json ./
-COPY packages/types/package.json packages/types/
-COPY apps/admin/package.json apps/admin/
+COPY . .
 
-# Install
-RUN pnpm install --frozen-lockfile || pnpm install
+RUN pnpm install --no-frozen-lockfile
 
-# Copy source
-COPY packages/types/ packages/types/
-COPY apps/admin/ apps/admin/
-
-# Build
+# Build Next.js
 RUN pnpm --filter @studio/admin build
 
 ENV PORT=3000
