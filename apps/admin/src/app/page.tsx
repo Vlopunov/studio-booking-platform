@@ -18,13 +18,27 @@ interface DashboardStats {
 
 interface Booking {
   id: string;
-  clientName: string;
-  venueName: string;
+  humanId?: string;
+  client?: { firstName: string; lastName?: string | null; phone?: string | null; loyaltyTier?: string };
+  venue?: { name: string };
   date: string;
   startTime: string;
   endTime: string;
-  totalPrice: number;
+  finalPrice: string | number;
   status: string;
+}
+
+function bookingClientName(b: Booking): string {
+  if (b.client) return [b.client.firstName, b.client.lastName].filter(Boolean).join(" ");
+  return "—";
+}
+
+function bookingVenueName(b: Booking): string {
+  return b.venue?.name || "—";
+}
+
+function bookingPrice(b: Booking): number {
+  return Number(b.finalPrice || 0);
 }
 
 interface BookingsResponse {
@@ -148,12 +162,12 @@ export default function DashboardPage() {
   const scheduleByVenue: Record<string, Array<{ time: string; client: string }>> = {};
   if (todayBookings?.data) {
     for (const b of todayBookings.data) {
-      if (!scheduleByVenue[b.venueName]) {
-        scheduleByVenue[b.venueName] = [];
+      if (!scheduleByVenue[bookingVenueName(b)]) {
+        scheduleByVenue[bookingVenueName(b)] = [];
       }
-      scheduleByVenue[b.venueName].push({
+      scheduleByVenue[bookingVenueName(b)].push({
         time: `${b.startTime}\u2013${b.endTime}`,
-        client: b.clientName,
+        client: bookingClientName(b),
       });
     }
   }
@@ -420,9 +434,9 @@ export default function DashboardPage() {
                 {recentBookings.data.map((b) => (
                   <tr key={b.id} className="hover:bg-gray-50 transition-colors">
                     <td className="py-3 pr-4 font-medium text-gray-900">
-                      {b.clientName}
+                      {bookingClientName(b)}
                     </td>
-                    <td className="py-3 pr-4 text-gray-600">{b.venueName}</td>
+                    <td className="py-3 pr-4 text-gray-600">{bookingVenueName(b)}</td>
                     <td className="py-3 pr-4 text-gray-600">
                       {formatDate(b.date)}
                     </td>
@@ -430,7 +444,7 @@ export default function DashboardPage() {
                       {b.startTime} \u2013 {b.endTime}
                     </td>
                     <td className="py-3 pr-4 font-semibold text-gray-900">
-                      {formatCurrency(b.totalPrice)}
+                      {formatCurrency(bookingPrice(b))}
                     </td>
                     <td className="py-3">
                       <StatusBadge status={b.status} />

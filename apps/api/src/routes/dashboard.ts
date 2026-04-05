@@ -18,7 +18,7 @@ dashboardRouter.get("/stats", async (req: AuthRequest, res: Response) => {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const [todayBookings, periodBookings, venues, completedBookings] =
+    const [todayBookings, periodBookings, venues, completedBookings, pendingCount] =
       await Promise.all([
         prisma.booking.count({
           where: { date: { gte: today, lt: tomorrow } },
@@ -36,6 +36,7 @@ dashboardRouter.get("/stats", async (req: AuthRequest, res: Response) => {
           _sum: { finalPrice: true },
           _count: true,
         }),
+        prisma.booking.count({ where: { status: "PENDING" } }),
       ]);
 
     // Venue utilization: booked hours vs total available hours
@@ -75,6 +76,7 @@ dashboardRouter.get("/stats", async (req: AuthRequest, res: Response) => {
       utilization,
       revenue,
       conversionRate,
+      pendingCount,
       period,
     });
   } catch (err) {
