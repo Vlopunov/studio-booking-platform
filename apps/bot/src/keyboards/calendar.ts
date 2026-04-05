@@ -170,7 +170,7 @@ export async function generateCalendarKeyboard(
   }
 
   keyboard.row();
-  keyboard.text("◀️ Назад", "booking_back:venue");
+  keyboard.text("◀️ Назад к площадкам", "booking_back:venue");
 
   return keyboard;
 }

@@ -37,10 +37,11 @@ export default function ReviewsPage() {
     return params.toString();
   }, [venueFilter, ratingFilter, publicFilter]);
 
-  const { data: reviews, loading, refetch } = useApi<Review[]>(
+  const { data: reviewsResponse, loading, error, refetch } = useApi<{ data: Review[]; total: number }>(
     `/api/reviews?${queryParams}`,
     [queryParams]
   );
+  const reviews = reviewsResponse?.data ?? null;
   const { data: venues } = useApi<Venue[]>("/api/venues");
 
   const togglePublic = async (id: string, current: boolean) => {
@@ -103,7 +104,17 @@ export default function ReviewsPage() {
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         {loading ? (
-          <div className="p-12 text-center text-gray-500">Загрузка...</div>
+          <div className="p-12 text-center text-gray-500">
+            <div className="inline-block h-6 w-6 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin mb-2" />
+            <p>Загрузка...</p>
+          </div>
+        ) : error ? (
+          <div className="p-12 text-center text-red-500">
+            <p className="font-medium">Ошибка загрузки</p>
+            <p className="text-sm mt-1">{error}</p>
+          </div>
+        ) : !reviews || reviews.length === 0 ? (
+          <div className="p-12 text-center text-gray-500">Пока нет отзывов</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -232,13 +243,6 @@ export default function ReviewsPage() {
                   )}
                 </>
               ))}
-              {reviews?.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="p-12 text-center text-gray-500">
-                    Отзывы не найдены
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         )}

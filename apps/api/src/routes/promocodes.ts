@@ -1,6 +1,22 @@
 import { Router, Response } from "express";
+import { z } from "zod";
 import { prisma } from "@studio/database";
 import { AuthRequest } from "../middleware/auth";
+
+const createPromocodeSchema = z.object({
+  code: z.string().min(1).max(50),
+  type: z.enum(["PERCENT", "FIXED", "BONUS_POINTS"]),
+  value: z.number().min(0),
+  minOrderAmount: z.number().min(0).optional().nullable(),
+  maxDiscount: z.number().min(0).optional().nullable(),
+  maxUses: z.number().int().min(1).optional().nullable(),
+  validFrom: z.string(),
+  validUntil: z.string(),
+  isActive: z.boolean().optional(),
+  venueId: z.string().uuid().optional().nullable(),
+  tierRestriction: z.enum(["BRONZE", "SILVER", "GOLD", "PLATINUM"]).optional().nullable(),
+  firstBookingOnly: z.boolean().optional(),
+});
 
 export const promocodesRouter = Router();
 
@@ -46,6 +62,12 @@ promocodesRouter.get("/", async (req: AuthRequest, res: Response) => {
 // POST /api/promocodes
 promocodesRouter.post("/", async (req: AuthRequest, res: Response) => {
   try {
+    const parsed = createPromocodeSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Validation failed", details: parsed.error.flatten() });
+      return;
+    }
+
     const promocode = await prisma.promocode.create({
       data: {
         ...req.body,

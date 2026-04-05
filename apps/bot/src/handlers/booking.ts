@@ -1,20 +1,17 @@
 import { Bot, InlineKeyboard } from "grammy";
 import { prisma } from "@studio/database";
-import { formatPrice, formatDate, checkMilestone } from "@studio/utils";
+import { formatPrice, formatDate } from "@studio/utils";
 import { getVenueSocialProof, getPostBookingReinforcement } from "../services/social-proof";
 import { updateClientPreferences } from "../services/recommendation";
 import { generateCalendarKeyboard } from "../keyboards/calendar";
 import { generateTimeSlotsKeyboard } from "../keyboards/time-slots";
 import { generateAddonsKeyboard } from "../keyboards/addons";
+import {
+  createBooking,
+  calculatePrice as calculateServicePrice,
+  type PriceBreakdown,
+} from "../services/booking.service";
 import type { StudioContext } from "../context";
-
-const MILESTONE_BONUSES: Record<number, number> = {
-  5: 500,
-  10: 1000,
-  20: 2000,
-  50: 5000,
-  100: 10000,
-};
 
 export function registerBooking(bot: Bot<StudioContext>) {
   // ─── Step 1: Venue selection ────────────────────────────────
@@ -43,7 +40,7 @@ export function registerBooking(bot: Bot<StudioContext>) {
       return;
     }
 
-    // Show venue details with photos
+    // Show venue details
     const socialProof = await getVenueSocialProof(venueId);
     const description =
       `📸 <b>${venue.name}</b>\n\n` +
@@ -53,7 +50,7 @@ export function registerBooking(bot: Bot<StudioContext>) {
       (venue.amenities.length > 0 ? `🏠 ${venue.amenities.join(", ")}\n` : "") +
       (socialProof ? `\n${socialProof}\n` : "");
 
-    // Send venue photo if available
+    // FIX 6: Send venue photo on selection
     if (venue.photos.length > 0) {
       try {
         await ctx.replyWithPhoto(venue.photos[0], {
@@ -61,7 +58,6 @@ export function registerBooking(bot: Bot<StudioContext>) {
           parse_mode: "HTML",
         });
       } catch {
-        // If photo fails, just send text
         await ctx.reply(description, { parse_mode: "HTML" });
       }
     } else {
@@ -172,8 +168,9 @@ export function registerBooking(bot: Bot<StudioContext>) {
       keyboard.text("Нет доступной длительности", "cal_noop");
     }
 
+    // FIX 2: Back button
     keyboard.row();
-    keyboard.text("◀️ Назад", "booking_back:time");
+    keyboard.text("◀️ Назад к времени", "booking_back:time");
 
     try {
       await ctx.editMessageText(
@@ -297,6 +294,7 @@ export function registerBooking(bot: Bot<StudioContext>) {
     if (ctx.session.bookingStep !== "promo_input") return next();
 
     const code = ctx.message.text.trim().toUpperCase();
+
     const promo = await prisma.promocode.findFirst({
       where: {
         code,
@@ -311,19 +309,16 @@ export function registerBooking(bot: Bot<StudioContext>) {
       return;
     }
 
-    // Check if venue-specific
     if (promo.venueId && promo.venueId !== ctx.session.bookingData.venueId) {
       await ctx.reply("❌ Этот промокод не действует для выбранной площадки.");
       return;
     }
 
-    // Check max uses
     if (promo.maxUses && promo.usedCount >= promo.maxUses) {
       await ctx.reply("❌ Промокод уже использован максимальное число раз.");
       return;
     }
 
-    // Check if already used by this client
     const usedBefore = await prisma.usedPromocode.findFirst({
       where: { clientId: ctx.client.id, promocodeId: promo.id },
     });
@@ -332,13 +327,11 @@ export function registerBooking(bot: Bot<StudioContext>) {
       return;
     }
 
-    // Check first booking restriction
     if (promo.firstBookingOnly && ctx.client.totalBookings > 0) {
       await ctx.reply("❌ Этот промокод только для первого бронирования.");
       return;
     }
 
-    // Check tier restriction
     if (promo.tierRestriction && ctx.client.loyaltyTier !== promo.tierRestriction) {
       await ctx.reply("❌ Этот промокод не доступен для вашего уровня лояльности.");
       return;
@@ -400,183 +393,122 @@ export function registerBooking(bot: Bot<StudioContext>) {
     await showConfirmation(ctx);
   });
 
-  // ─── Confirm booking ────────────────────────────────────────
+  // ─── FIX 1: Confirm booking — uses booking service ─────────
   bot.callbackQuery("book_confirm", async (ctx) => {
     const bd = ctx.session.bookingData;
-    const venue = await prisma.venue.findUnique({ where: { id: bd.venueId! } });
-    if (!venue) {
-      await ctx.answerCallbackQuery("Ошибка: площадка не найдена.");
+
+    if (!bd.venueId || !bd.date || !bd.startTime || !bd.durationHours) {
+      await ctx.answerCallbackQuery("Ошибка: данные бронирования неполные.");
       return;
     }
 
-    const priceBreakdown = await calculatePrice(ctx);
-    const endTime = calculateEndTime(bd.startTime!, bd.durationHours!);
-
-    // Generate human ID
-    const today = new Date();
-    const datePrefix = `B-${today.getFullYear().toString().slice(2)}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
-    const todayBookings = await prisma.booking.count({
-      where: {
-        humanId: { startsWith: datePrefix },
-      },
-    });
-    const humanId = `${datePrefix}-${String(todayBookings + 1).padStart(3, "0")}`;
-
-    // Apply promocode
-    let promocodeId: string | undefined;
-    if (bd.promocode) {
-      const promo = await prisma.promocode.findFirst({
-        where: { code: bd.promocode, isActive: true },
-      });
-      if (promo) {
-        promocodeId = promo.id;
-        await prisma.promocode.update({
-          where: { id: promo.id },
-          data: { usedCount: { increment: 1 } },
-        });
-        await prisma.usedPromocode.create({
-          data: { clientId: ctx.client.id, promocodeId: promo.id },
-        });
+    // Build addon selections from session data
+    const addonSelections: Array<{ addonId: string; quantity: number }> = [];
+    if (bd.selectedAddons) {
+      for (const [addonId, quantity] of Object.entries(bd.selectedAddons)) {
+        if (quantity > 0) {
+          addonSelections.push({ addonId, quantity });
+        }
       }
     }
-
-    // Create booking
-    const booking = await prisma.booking.create({
-      data: {
-        humanId,
-        clientId: ctx.client.id,
-        venueId: bd.venueId!,
-        date: new Date(bd.date!),
-        startTime: bd.startTime!,
-        endTime,
-        durationHours: bd.durationHours!,
-        basePrice: priceBreakdown.basePrice,
-        pricingDetails: priceBreakdown.pricingDetails,
-        addonsTotal: priceBreakdown.addonsTotal,
-        discountAmount: priceBreakdown.discountAmount,
-        discountDetails: priceBreakdown.discountDetails,
-        bonusUsed: bd.bonusToSpend || 0,
-        finalPrice: priceBreakdown.finalPrice,
-        promocodeId,
-        comment: bd.comment,
-        giftCertId: bd.giftCertId,
-        status: "PENDING",
-      },
-    });
-
-    // Create booking addons
-    if (bd.selectedAddons && Object.keys(bd.selectedAddons).length > 0) {
-      const addonRecords = await prisma.addon.findMany({
-        where: { id: { in: Object.keys(bd.selectedAddons) } },
-      });
-
-      for (const addon of addonRecords) {
-        const qty = bd.selectedAddons![addon.id] || 0;
-        if (qty <= 0) continue;
-
-        const price =
-          addon.priceType === "PER_HOUR"
-            ? Number(addon.price) * bd.durationHours! * qty
-            : Number(addon.price) * qty;
-
-        await prisma.bookingAddon.create({
-          data: {
-            bookingId: booking.id,
-            addonId: addon.id,
-            quantity: qty,
-            price,
-          },
-        });
-      }
-    }
-
-    // Deduct bonus
-    if (bd.bonusToSpend && bd.bonusToSpend > 0) {
-      await prisma.client.update({
-        where: { id: ctx.client.id },
-        data: { bonusBalance: { decrement: bd.bonusToSpend } },
-      });
-      await prisma.bonusTransaction.create({
-        data: {
-          clientId: ctx.client.id,
-          amount: -bd.bonusToSpend,
-          type: "SPENT",
-          description: `Списание за бронирование #${humanId}`,
-          bookingId: booking.id,
-        },
-      });
-    }
-
-    // Update client stats
-    const newTotal = ctx.client.totalBookings + 1;
-    await prisma.client.update({
-      where: { id: ctx.client.id },
-      data: {
-        totalBookings: { increment: 1 },
-        totalSpent: { increment: Number(priceBreakdown.finalPrice) },
-        lastActivityAt: new Date(),
-      },
-    });
-
-    // Check milestone
-    const milestone = checkMilestone(newTotal);
-    let milestoneText = "";
-    if (milestone) {
-      const bonus = MILESTONE_BONUSES[milestone] || 0;
-      if (bonus > 0) {
-        await prisma.client.update({
-          where: { id: ctx.client.id },
-          data: { bonusBalance: { increment: bonus } },
-        });
-        await prisma.bonusTransaction.create({
-          data: {
-            clientId: ctx.client.id,
-            amount: bonus,
-            type: "MILESTONE_BONUS",
-            description: `Юбилейная бронь #${milestone}`,
-            bookingId: booking.id,
-          },
-        });
-        milestoneText = `\n\n🎉 Это ваше ${milestone}-е бронирование! Начислено ${bonus} бонусов!`;
-      }
-    }
-
-    // Update preferences
-    await updateClientPreferences(ctx.client.id);
-
-    // Post-booking reinforcement
-    const dayOfWeek = ["Воскресенье", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"][
-      new Date(bd.date!).getDay()
-    ];
-    const reinforcement = await getPostBookingReinforcement(bd.venueId!, dayOfWeek);
-
-    // Notify admin (send to admin telegram if configured)
-    await notifyAdmin(booking.id, venue.name, bd, ctx.client, humanId);
-
-    const confirmText =
-      `✅ Бронирование создано!\n\n` +
-      `📸 ${venue.name}\n` +
-      `📅 ${formatDate(new Date(bd.date!))} · ${bd.startTime} – ${endTime}\n` +
-      `⏱ ${bd.durationHours} ч.\n` +
-      `💰 ${formatPrice(Number(priceBreakdown.finalPrice))}\n` +
-      `🔖 #${humanId}\n\n` +
-      reinforcement +
-      milestoneText;
 
     try {
-      await ctx.editMessageText(confirmText, {
-        reply_markup: new InlineKeyboard().text("📋 Мои брони", "my_bookings"),
+      // Call booking service — handles:
+      // - humanId generation (B-YYMMDD-NNN)
+      // - working hours validation
+      // - 30-min buffer slot conflict check (in transaction)
+      // - price calculation with pricing rules + loyalty discount from LoyaltySettings
+      // - bonus deduction
+      // - promocode usage recording
+      // - booking creation with all proper fields
+      // - analytics event recording
+      // NOTE: Does NOT award bonuses — only sets bonusEarned estimate.
+      // Actual bonus crediting happens in completeBooking() (admin action).
+      const { booking, priceBreakdown } = await createBooking(ctx.client.id, {
+        venueId: bd.venueId,
+        date: new Date(bd.date),
+        startTime: bd.startTime,
+        durationHours: bd.durationHours,
+        addonSelections: addonSelections.length > 0 ? addonSelections : undefined,
+        promocodeCode: bd.promocode,
+        bonusToSpend: bd.bonusToSpend,
+        comment: bd.comment,
+        giftCertId: bd.giftCertId,
       });
-    } catch {
-      await ctx.reply(confirmText, {
-        reply_markup: new InlineKeyboard().text("📋 Мои брони", "my_bookings"),
-      });
-    }
-    await ctx.answerCallbackQuery("Забронировано! ✅");
 
-    // Reset session
-    ctx.session.bookingStep = null;
-    ctx.session.bookingData = {};
+      // Update client preferences (non-blocking)
+      updateClientPreferences(ctx.client.id).catch(() => {});
+
+      // Post-booking reinforcement text
+      const dayOfWeek = [
+        "Воскресенье", "Понедельник", "Вторник", "Среда",
+        "Четверг", "Пятница", "Суббота",
+      ][new Date(bd.date).getDay()];
+      const reinforcement = await getPostBookingReinforcement(bd.venueId, dayOfWeek);
+
+      const venue = await prisma.venue.findUnique({ where: { id: bd.venueId } });
+      const venueName = venue?.name || "Площадка";
+
+      const confirmText =
+        `✅ Бронирование создано!\n\n` +
+        `📸 ${venueName}\n` +
+        `📅 ${formatDate(new Date(bd.date))} · ${booking.startTime} – ${booking.endTime}\n` +
+        `⏱ ${booking.durationHours} ч.\n` +
+        `💰 ${formatPrice(Number(booking.finalPrice))}\n` +
+        (priceBreakdown.bonusEarned > 0
+          ? `⭐ Будет начислено ${priceBreakdown.bonusEarned} бонусов после визита\n`
+          : "") +
+        `🔖 #${booking.humanId}\n\n` +
+        reinforcement;
+
+      try {
+        await ctx.editMessageText(confirmText, {
+          reply_markup: new InlineKeyboard()
+            .text("📋 Мои брони", "my_bookings")
+            .row()
+            .text("🏠 Главное меню", "main_menu"),
+        });
+      } catch {
+        await ctx.reply(confirmText, {
+          reply_markup: new InlineKeyboard()
+            .text("📋 Мои брони", "my_bookings")
+            .row()
+            .text("🏠 Главное меню", "main_menu"),
+        });
+      }
+      await ctx.answerCallbackQuery("Забронировано! ✅");
+
+      // Reset session
+      ctx.session.bookingStep = null;
+      ctx.session.bookingData = {};
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : "Неизвестная ошибка";
+      console.error("Booking creation failed:", error);
+
+      try {
+        await ctx.editMessageText(
+          `❌ Не удалось создать бронирование:\n${message}\n\nПопробуйте выбрать другое время.`,
+          {
+            reply_markup: new InlineKeyboard()
+              .text("◀️ Назад к времени", "booking_back:time")
+              .row()
+              .text("🏠 Главное меню", "main_menu"),
+          },
+        );
+      } catch {
+        await ctx.reply(
+          `❌ Не удалось создать бронирование:\n${message}\n\nПопробуйте выбрать другое время.`,
+          {
+            reply_markup: new InlineKeyboard()
+              .text("◀️ Назад к времени", "booking_back:time")
+              .row()
+              .text("🏠 Главное меню", "main_menu"),
+          },
+        );
+      }
+      await ctx.answerCallbackQuery("Ошибка бронирования");
+    }
   });
 
   // ─── Cancel booking ─────────────────────────────────────────
@@ -591,19 +523,30 @@ export function registerBooking(bot: Bot<StudioContext>) {
     await ctx.answerCallbackQuery();
   });
 
-  // ─── Back navigation ────────────────────────────────────────
+  // ─── FIX 2: Back navigation handlers ───────────────────────
   bot.callbackQuery(/^booking_back:(.+)$/, async (ctx) => {
     const step = ctx.match[1];
     await ctx.answerCallbackQuery();
 
     switch (step) {
+      case "main": {
+        // Back to main menu
+        ctx.session.bookingStep = null;
+        ctx.session.bookingData = {};
+        // Import is dynamic to avoid circular dependency
+        const { registerMainMenu } = await import("./main-menu");
+        await registerMainMenu(ctx);
+        break;
+      }
       case "venue": {
+        // Back to venue selection (from calendar)
         ctx.session.bookingStep = null;
         ctx.session.bookingData = {};
         await showVenueSelection(ctx);
         break;
       }
       case "date": {
+        // Back to date selection (from time slots)
         const venueId = ctx.session.bookingData?.venueId;
         if (!venueId) {
           await showVenueSelection(ctx);
@@ -622,6 +565,7 @@ export function registerBooking(bot: Bot<StudioContext>) {
         break;
       }
       case "time": {
+        // Back to time selection (from duration)
         const { venueId, date } = ctx.session.bookingData || {};
         if (!venueId || !date) {
           await showVenueSelection(ctx);
@@ -645,8 +589,9 @@ export function registerBooking(bot: Bot<StudioContext>) {
         break;
       }
       case "duration": {
-        const { venueId, date, startTime } = ctx.session.bookingData || {};
-        if (!venueId || !date || !startTime) {
+        // Back to duration selection (from addons)
+        const bd3 = ctx.session.bookingData || {};
+        if (!bd3.venueId || !bd3.date || !bd3.startTime) {
           await showVenueSelection(ctx);
           return;
         }
@@ -654,18 +599,67 @@ export function registerBooking(bot: Bot<StudioContext>) {
         ctx.session.bookingData.durationHours = undefined;
         ctx.session.bookingData.selectedAddons = {};
 
-        // Re-show time slot selection
-        const timeSlotsKb = await generateTimeSlotsKeyboard(venueId, date);
+        // Re-show duration picker
+        const durationVenue = await prisma.venue.findUnique({ where: { id: bd3.venueId } });
+        if (!durationVenue) {
+          await showVenueSelection(ctx);
+          return;
+        }
+
+        const durationSchedule = await getScheduleForDate(bd3.venueId, bd3.date);
+        const durationMaxAvail = durationSchedule
+          ? await calculateMaxHours(bd3.startTime, durationSchedule.closeTime, bd3.venueId, bd3.date)
+          : durationVenue.maxHours;
+
+        const durationKb = new InlineKeyboard();
+        const dMinH = durationVenue.minHours;
+        const dMaxH = Math.min(durationVenue.maxHours, durationMaxAvail);
+
+        for (let h = dMinH; h <= dMaxH; h++) {
+          const hourLabel = h === 1 ? "час" : h < 5 ? "часа" : "часов";
+          durationKb.text(`${h} ${hourLabel}`, `book_duration:${h}`);
+          if (h % 3 === 0) durationKb.row();
+        }
+        durationKb.row();
+        durationKb.text("◀️ Назад к времени", "booking_back:time");
+
         try {
           await ctx.editMessageText(
-            `🕐 Свободные окна на ${formatDate(new Date(date))}:`,
-            { reply_markup: timeSlotsKb },
+            `⏱ Выберите продолжительность:\n` +
+              `Начало: ${bd3.startTime}\n` +
+              `💰 ${formatPrice(Number(durationVenue.pricePerHour))}/ч`,
+            { reply_markup: durationKb },
           );
         } catch {
           await ctx.reply(
-            `🕐 Свободные окна на ${formatDate(new Date(date))}:`,
-            { reply_markup: timeSlotsKb },
+            `⏱ Выберите продолжительность:\n` +
+              `Начало: ${bd3.startTime}\n` +
+              `💰 ${formatPrice(Number(durationVenue.pricePerHour))}/ч`,
+            { reply_markup: durationKb },
           );
+        }
+        break;
+      }
+      case "addons": {
+        // Back to addons (from confirmation)
+        const bd2 = ctx.session.bookingData || {};
+        if (!bd2.venueId) {
+          await showVenueSelection(ctx);
+          return;
+        }
+        ctx.session.bookingStep = "addons";
+        const addonsKb = await generateAddonsKeyboard(
+          bd2.venueId,
+          bd2.selectedAddons || {},
+        );
+        try {
+          await ctx.editMessageText("🛒 Выберите дополнительные услуги:", {
+            reply_markup: addonsKb,
+          });
+        } catch {
+          await ctx.reply("🛒 Выберите дополнительные услуги:", {
+            reply_markup: addonsKb,
+          });
         }
         break;
       }
@@ -674,9 +668,19 @@ export function registerBooking(bot: Bot<StudioContext>) {
       }
     }
   });
+
+  // ─── Main menu callback ─────────────────────────────────────
+  bot.callbackQuery("main_menu", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    ctx.session.bookingStep = null;
+    ctx.session.bookingData = {};
+    const { registerMainMenu } = await import("./main-menu");
+    await registerMainMenu(ctx);
+  });
 }
 
 // ─── Helper: Show venue selection ───────────────────────────────
+
 async function showVenueSelection(ctx: StudioContext) {
   const venues = await prisma.venue.findMany({
     where: { isActive: true },
@@ -697,16 +701,41 @@ async function showVenueSelection(ctx: StudioContext) {
     keyboard.text(label, `book_venue:${venue.id}`).row();
   }
 
+  // FIX 2: Back button — main menu
+  keyboard.text("🏠 Главное меню", "booking_back:main");
+
   await ctx.reply("Выберите площадку:", { reply_markup: keyboard });
 }
 
 // ─── Helper: Show price confirmation ────────────────────────────
+
 async function showConfirmation(ctx: StudioContext) {
   const bd = ctx.session.bookingData;
   const venue = await prisma.venue.findUnique({ where: { id: bd.venueId! } });
   if (!venue) return;
 
-  const priceBreakdown = await calculatePrice(ctx);
+  // Build addon selections
+  const addonSelections: Array<{ addonId: string; quantity: number }> = [];
+  if (bd.selectedAddons) {
+    for (const [addonId, quantity] of Object.entries(bd.selectedAddons)) {
+      if (quantity > 0) {
+        addonSelections.push({ addonId, quantity });
+      }
+    }
+  }
+
+  // Use the proper service-level price calculation
+  const priceBreakdown = await calculateServicePrice(
+    bd.venueId!,
+    new Date(bd.date!),
+    bd.startTime!,
+    bd.durationHours!,
+    ctx.client.id,
+    addonSelections.length > 0 ? addonSelections : undefined,
+    bd.promocode,
+    bd.bonusToSpend,
+  );
+
   const endTime = calculateEndTime(bd.startTime!, bd.durationHours!);
 
   let text =
@@ -715,33 +744,46 @@ async function showConfirmation(ctx: StudioContext) {
     `📅 ${formatDate(new Date(bd.date!))} · ${bd.startTime} – ${endTime}\n` +
     `⏱ ${bd.durationHours} ч.\n\n` +
     `<b>Стоимость:</b>\n` +
-    `  Базовая: ${formatPrice(priceBreakdown.basePrice)}\n`;
+    `  Базовая: ${formatPrice(priceBreakdown.baseTotal)} (${formatPrice(priceBreakdown.baseRate)}/ч)\n`;
 
   // Pricing rules applied
-  if (priceBreakdown.pricingDetails && Array.isArray(priceBreakdown.pricingDetails)) {
-    for (const rule of priceBreakdown.pricingDetails as any[]) {
+  if (priceBreakdown.appliedRules.length > 0) {
+    for (const rule of priceBreakdown.appliedRules) {
       text += `  ${rule.name}: x${rule.multiplier}\n`;
     }
   }
 
   // Addons
-  if (priceBreakdown.addonsTotal > 0) {
-    text += `  Допуслуги: +${formatPrice(priceBreakdown.addonsTotal)}\n`;
+  if (priceBreakdown.addons.length > 0) {
+    const addonsTotal = priceBreakdown.addons.reduce((s, a) => s + a.total, 0);
+    text += `  Допуслуги: +${formatPrice(addonsTotal)}\n`;
+    for (const addon of priceBreakdown.addons) {
+      text += `    ${addon.name} x${addon.quantity}: ${formatPrice(addon.total)}\n`;
+    }
   }
 
-  // Discount
-  if (priceBreakdown.discountAmount > 0) {
-    text += `  Скидка: -${formatPrice(priceBreakdown.discountAmount)}\n`;
+  // Loyalty discount
+  if (priceBreakdown.loyaltyDiscount > 0) {
+    text += `  Скидка лояльности: -${formatPrice(priceBreakdown.loyaltyDiscount)}\n`;
+  }
+
+  // Promocode discount
+  if (priceBreakdown.promocodeDiscount > 0) {
+    text += `  Промокод: -${formatPrice(priceBreakdown.promocodeDiscount)}\n`;
   }
 
   // Bonus
-  if (bd.bonusToSpend && bd.bonusToSpend > 0) {
-    text += `  Бонусы: -${formatPrice(bd.bonusToSpend)}\n`;
+  if (priceBreakdown.bonusDiscount > 0) {
+    text += `  Бонусы: -${formatPrice(priceBreakdown.bonusDiscount)}\n`;
   }
 
-  text +=
-    `\n<b>Итого: ${formatPrice(Number(priceBreakdown.finalPrice))}</b>\n\n` +
-    `⏳ Слот зарезервирован на 10 минут.`;
+  text += `\n<b>Итого: ${formatPrice(priceBreakdown.finalPrice)}</b>\n`;
+
+  if (priceBreakdown.bonusEarned > 0) {
+    text += `⭐ Будет начислено ${priceBreakdown.bonusEarned} бонусов после визита\n`;
+  }
+
+  text += `\n⏳ Слот зарезервирован на 10 минут.`;
 
   if (bd.comment) {
     text += `\n💬 ${bd.comment}`;
@@ -764,6 +806,10 @@ async function showConfirmation(ctx: StudioContext) {
   }
 
   keyboard.text("❌ Отменить", "book_cancel");
+  keyboard.row();
+
+  // FIX 2: Back button — back to addons
+  keyboard.text("◀️ Назад к допуслугам", "booking_back:addons");
 
   try {
     await ctx.editMessageText(text, { reply_markup: keyboard, parse_mode: "HTML" });
@@ -772,144 +818,7 @@ async function showConfirmation(ctx: StudioContext) {
   }
 }
 
-// ─── Price calculation ──────────────────────────────────────────
-interface PriceBreakdown {
-  basePrice: number;
-  pricingDetails: any[];
-  addonsTotal: number;
-  discountAmount: number;
-  discountDetails: any;
-  finalPrice: number;
-}
-
-async function calculatePrice(ctx: StudioContext): Promise<PriceBreakdown> {
-  const bd = ctx.session.bookingData;
-  const venue = await prisma.venue.findUnique({ where: { id: bd.venueId! } });
-  if (!venue) throw new Error("Venue not found");
-
-  let basePrice = Number(venue.pricePerHour) * bd.durationHours!;
-
-  // Apply pricing rules
-  const pricingRules = await prisma.pricingRule.findMany({
-    where: { venueId: bd.venueId!, isActive: true },
-    orderBy: { priority: "desc" },
-  });
-
-  const dateObj = new Date(bd.date!);
-  const dow = (dateObj.getDay() + 6) % 7; // Mon=0
-  const startMinutes = toMinutes(bd.startTime!);
-  const appliedRules: any[] = [];
-
-  let adjustedPrice = basePrice;
-  for (const rule of pricingRules) {
-    let applies = false;
-
-    switch (rule.type) {
-      case "WEEKEND":
-        applies = dow >= 5; // Sat/Sun
-        break;
-      case "TIME_RANGE":
-        if (rule.startTime && rule.endTime) {
-          const ruleStart = toMinutes(rule.startTime);
-          const ruleEnd = toMinutes(rule.endTime);
-          applies = startMinutes >= ruleStart && startMinutes < ruleEnd;
-        }
-        break;
-      case "SPECIFIC_DATE":
-        if (rule.specificDate) {
-          const ruleDate = new Date(rule.specificDate);
-          applies =
-            ruleDate.getFullYear() === dateObj.getFullYear() &&
-            ruleDate.getMonth() === dateObj.getMonth() &&
-            ruleDate.getDate() === dateObj.getDate();
-        }
-        break;
-      case "LONG_BOOKING":
-        applies = rule.minHours != null && bd.durationHours! >= rule.minHours;
-        break;
-    }
-
-    if (applies) {
-      adjustedPrice = adjustedPrice * Number(rule.multiplier);
-      appliedRules.push({
-        name: rule.name,
-        type: rule.type,
-        multiplier: Number(rule.multiplier),
-      });
-    }
-  }
-
-  // Calculate addons total
-  let addonsTotal = 0;
-  if (bd.selectedAddons && Object.keys(bd.selectedAddons).length > 0) {
-    const addonRecords = await prisma.addon.findMany({
-      where: { id: { in: Object.keys(bd.selectedAddons) } },
-    });
-
-    for (const addon of addonRecords) {
-      const qty = bd.selectedAddons![addon.id] || 0;
-      if (qty <= 0) continue;
-
-      const price =
-        addon.priceType === "PER_HOUR"
-          ? Number(addon.price) * bd.durationHours! * qty
-          : Number(addon.price) * qty;
-
-      addonsTotal += price;
-    }
-  }
-
-  // Calculate discount
-  let discountAmount = 0;
-  let discountDetails: any = null;
-
-  if (bd.promocode) {
-    const promo = await prisma.promocode.findFirst({
-      where: { code: bd.promocode, isActive: true },
-    });
-    if (promo) {
-      if (promo.type === "PERCENT") {
-        discountAmount = adjustedPrice * (Number(promo.value) / 100);
-        if (promo.maxDiscount) {
-          discountAmount = Math.min(discountAmount, Number(promo.maxDiscount));
-        }
-      } else if (promo.type === "FIXED") {
-        discountAmount = Number(promo.value);
-      }
-      discountDetails = { code: bd.promocode, type: promo.type, value: Number(promo.value) };
-    }
-  }
-
-  // Loyalty tier discount
-  const tierDiscounts: Record<string, number> = {
-    BRONZE: 0,
-    SILVER: 0.05,
-    GOLD: 0.07,
-    PLATINUM: 0.1,
-  };
-  const tierDiscount = tierDiscounts[ctx.client.loyaltyTier] || 0;
-  if (tierDiscount > 0) {
-    const loyaltyDisc = adjustedPrice * tierDiscount;
-    discountAmount += loyaltyDisc;
-    discountDetails = {
-      ...(discountDetails || {}),
-      loyaltyDiscount: tierDiscount,
-      loyaltyAmount: loyaltyDisc,
-    };
-  }
-
-  const bonusDeduction = bd.bonusToSpend || 0;
-  const finalPrice = Math.max(0, adjustedPrice + addonsTotal - discountAmount - bonusDeduction);
-
-  return {
-    basePrice,
-    pricingDetails: appliedRules,
-    addonsTotal,
-    discountAmount,
-    discountDetails,
-    finalPrice: Math.round(finalPrice * 100) / 100,
-  };
-}
+// ─── Utility functions ────────────────────────────────────────────
 
 function calculateEndTime(startTime: string, hours: number): string {
   const startMinutes = toMinutes(startTime);
@@ -970,38 +879,4 @@ async function calculateMaxHours(
 
   const maxMinutes = Math.min(nextBookingStart, closeMin) - startMin;
   return Math.max(1, Math.floor(maxMinutes / 60));
-}
-
-async function notifyAdmin(
-  bookingId: string,
-  venueName: string,
-  bd: StudioContext["session"]["bookingData"],
-  client: StudioContext["client"],
-  humanId: string,
-): Promise<void> {
-  // Find admins with telegramId
-  const admins = await prisma.admin.findMany({
-    where: { isActive: true, telegramId: { not: null } },
-  });
-
-  if (admins.length === 0) return;
-
-  // Log the booking creation as an analytics event for admin dashboard
-  await prisma.analyticsEvent.create({
-    data: {
-      type: "BOOKING_CREATED",
-      clientId: client.id,
-      venueId: bd.venueId,
-      metadata: {
-        bookingId,
-        humanId,
-        venueName,
-        date: bd.date,
-        startTime: bd.startTime,
-        durationHours: bd.durationHours,
-        clientName: `${client.firstName} ${client.lastName || ""}`.trim(),
-        clientPhone: client.phone,
-      },
-    },
-  });
 }

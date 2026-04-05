@@ -39,10 +39,11 @@ export default function ClientsPage() {
     return params.toString();
   }, [search, tierFilter, tagFilter]);
 
-  const { data: clients, loading } = useApi<Client[]>(
+  const { data: response, loading, error } = useApi<{ data: Client[]; total: number }>(
     `/api/clients?${queryParams}`,
     [queryParams]
   );
+  const clients = response?.data ?? null;
 
   const allTags = useMemo(() => {
     if (!clients) return [];
@@ -96,7 +97,17 @@ export default function ClientsPage() {
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         {loading ? (
-          <div className="p-12 text-center text-gray-500">Загрузка...</div>
+          <div className="p-12 text-center text-gray-500">
+            <div className="inline-block h-6 w-6 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin mb-2" />
+            <p>Загрузка...</p>
+          </div>
+        ) : error ? (
+          <div className="p-12 text-center text-red-500">
+            <p className="font-medium">Ошибка загрузки</p>
+            <p className="text-sm mt-1">{error}</p>
+          </div>
+        ) : !clients || clients.length === 0 ? (
+          <div className="p-12 text-center text-gray-500">Пока нет клиентов</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -157,13 +168,6 @@ export default function ClientsPage() {
                   </tr>
                 );
               })}
-              {clients?.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="p-12 text-center text-gray-500">
-                    Клиенты не найдены
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         )}

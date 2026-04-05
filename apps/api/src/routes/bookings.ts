@@ -1,6 +1,29 @@
 import { Router, Response } from "express";
+import { z } from "zod";
 import { prisma } from "@studio/database";
 import { AuthRequest } from "../middleware/auth";
+
+const createBookingSchema = z.object({
+  clientId: z.string().uuid().optional(),
+  venueId: z.string().uuid(),
+  date: z.string(),
+  startTime: z.string().regex(/^\d{2}:\d{2}$/, "startTime must be HH:MM"),
+  endTime: z.string().regex(/^\d{2}:\d{2}$/, "endTime must be HH:MM").optional(),
+  durationHours: z.number().int().min(1).max(12),
+  basePrice: z.number().min(0).optional(),
+  finalPrice: z.number().min(0).optional(),
+  addons: z
+    .array(
+      z.object({
+        addonId: z.string().uuid(),
+        quantity: z.number().int().min(1),
+        price: z.number().min(0),
+      })
+    )
+    .optional(),
+  comment: z.string().optional(),
+  adminNote: z.string().optional(),
+});
 
 export const bookingsRouter = Router();
 
@@ -154,6 +177,12 @@ bookingsRouter.get("/:id", async (req: AuthRequest, res: Response) => {
 // POST /api/bookings
 bookingsRouter.post("/", async (req: AuthRequest, res: Response) => {
   try {
+    const parsed = createBookingSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Validation failed", details: parsed.error.flatten() });
+      return;
+    }
+
     const {
       clientId,
       venueId,

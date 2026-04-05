@@ -49,7 +49,7 @@ const TYPE_BADGES: Record<string, string> = {
 };
 
 export default function VenuesPage() {
-  const { data: venues, loading, refetch } = useApi<Venue[]>("/api/venues");
+  const { data: venues, loading, error, refetch } = useApi<Venue[]>("/api/venues");
   const [editingVenue, setEditingVenue] = useState<Venue | null>(null);
   const [expandedVenue, setExpandedVenue] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -119,6 +119,15 @@ export default function VenuesPage() {
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-64 bg-gray-200 rounded-xl animate-pulse" />
           ))}
+        </div>
+      ) : error ? (
+        <div className="p-12 text-center text-red-500 bg-white rounded-xl border border-gray-200">
+          <p className="font-medium">Ошибка загрузки</p>
+          <p className="text-sm mt-1">{error}</p>
+        </div>
+      ) : !venues || venues.length === 0 ? (
+        <div className="p-12 text-center text-gray-500 bg-white rounded-xl border border-gray-200">
+          Пока нет площадок
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

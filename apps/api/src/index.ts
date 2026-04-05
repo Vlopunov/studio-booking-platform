@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import rateLimit from "express-rate-limit";
 import { authMiddleware } from "./middleware/auth";
 import { initJobs } from "./jobs";
 
@@ -23,6 +24,23 @@ import { adminsRouter } from "./routes/admins";
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+const generalLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const authLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many authentication attempts, please try again later" },
+});
+
+app.use(generalLimiter);
+
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, curl, etc.)
@@ -38,7 +56,7 @@ app.use(cors({
 app.use(express.json());
 
 // Public
-app.use("/api/auth", authRouter);
+app.use("/api/auth", authLimiter, authRouter);
 
 // Protected
 app.use("/api/dashboard", authMiddleware, dashboardRouter);

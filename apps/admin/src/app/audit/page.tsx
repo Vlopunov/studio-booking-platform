@@ -52,10 +52,11 @@ export default function AuditPage() {
     return params.toString();
   }, [adminFilter, actionFilter, entityFilter, dateFrom, dateTo]);
 
-  const { data: entries, loading } = useApi<AuditEntry[]>(
+  const { data: auditResponse, loading, error } = useApi<{ data: AuditEntry[]; total: number }>(
     `/api/audit?${queryParams}`,
     [queryParams]
   );
+  const entries = auditResponse?.data ?? null;
 
   return (
     <div className="p-6 space-y-6">
@@ -111,7 +112,17 @@ export default function AuditPage() {
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         {loading ? (
-          <div className="p-12 text-center text-gray-500">Загрузка...</div>
+          <div className="p-12 text-center text-gray-500">
+            <div className="inline-block h-6 w-6 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin mb-2" />
+            <p>Загрузка...</p>
+          </div>
+        ) : error ? (
+          <div className="p-12 text-center text-red-500">
+            <p className="font-medium">Ошибка загрузки</p>
+            <p className="text-sm mt-1">{error}</p>
+          </div>
+        ) : !entries || entries.length === 0 ? (
+          <div className="p-12 text-center text-gray-500">Записи аудита не найдены</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -177,13 +188,6 @@ export default function AuditPage() {
                   )}
                 </>
               ))}
-              {entries?.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="p-12 text-center text-gray-500">
-                    Записи не найдены
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         )}

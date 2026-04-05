@@ -102,7 +102,7 @@ export async function generateTimeSlotsKeyboard(
     keyboard.text("Нет свободных окон", "cal_noop").row();
     keyboard.text("📋 Встать в лист ожидания", `waitlist:${venueId}:${date}`);
     keyboard.row();
-    keyboard.text("◀️ Назад", "booking_back:date");
+    keyboard.text("◀️ Назад к датам", "booking_back:date");
     return keyboard;
   }
 

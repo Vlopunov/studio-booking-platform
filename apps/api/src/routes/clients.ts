@@ -1,6 +1,12 @@
 import { Router, Response } from "express";
+import { z } from "zod";
 import { prisma } from "@studio/database";
 import { AuthRequest } from "../middleware/auth";
+
+const updateClientSchema = z.object({
+  notes: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+});
 
 export const clientsRouter = Router();
 
@@ -165,7 +171,13 @@ clientsRouter.get("/:id", async (req: AuthRequest, res: Response) => {
 // PATCH /api/clients/:id
 clientsRouter.patch("/:id", async (req: AuthRequest, res: Response) => {
   try {
-    const { notes, tags } = req.body;
+    const parsed = updateClientSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Validation failed", details: parsed.error.flatten() });
+      return;
+    }
+
+    const { notes, tags } = parsed.data;
     const updateData: any = {};
     if (notes !== undefined) updateData.notes = notes;
     if (tags !== undefined) updateData.tags = tags;

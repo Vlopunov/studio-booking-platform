@@ -223,6 +223,10 @@ export async function calculatePrice(
         firstBookingOk = client.totalBookings === 0;
       }
 
+      // Check minOrderAmount against subtotal before promo discount
+      const minOrderOk =
+        promo.minOrderAmount === null || subtotal >= Number(promo.minOrderAmount);
+
       if (
         isActive &&
         withinDates &&
@@ -230,7 +234,8 @@ export async function calculatePrice(
         venueOk &&
         tierOk &&
         !alreadyUsed &&
-        firstBookingOk
+        firstBookingOk &&
+        minOrderOk
       ) {
         switch (promo.type) {
           case PromoType.PERCENT: {

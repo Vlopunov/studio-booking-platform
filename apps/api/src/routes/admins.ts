@@ -1,35 +1,12 @@
 import { Router, Response } from "express";
 import bcrypt from "bcryptjs";
 import { prisma } from "@studio/database";
-import { AuthRequest } from "../middleware/auth";
+import { AuthRequest, requireRole } from "../middleware/auth";
 
 export const adminsRouter = Router();
 
-// Middleware: SUPER_ADMIN only
-async function requireSuperAdmin(
-  req: AuthRequest,
-  res: Response,
-  next: () => void
-): Promise<void> {
-  try {
-    const admin = await prisma.admin.findUnique({
-      where: { id: req.adminId },
-      select: { role: true },
-    });
-
-    if (!admin || admin.role !== "SUPER_ADMIN") {
-      res.status(403).json({ error: "Forbidden: SUPER_ADMIN role required" });
-      return;
-    }
-
-    next();
-  } catch (err) {
-    console.error("Super admin check error:", err);
-    res.status(500).json({ error: "Authorization check failed" });
-  }
-}
-
-adminsRouter.use(requireSuperAdmin as any);
+// All admin management routes require SUPER_ADMIN role
+adminsRouter.use(requireRole("SUPER_ADMIN"));
 
 // GET /api/admins
 adminsRouter.get("/", async (_req: AuthRequest, res: Response) => {

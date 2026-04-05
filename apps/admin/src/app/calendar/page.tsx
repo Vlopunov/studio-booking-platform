@@ -64,12 +64,13 @@ export default function CalendarPage() {
 
   const venueId = activeVenueId || venues?.[0]?.id || "";
 
-  const { data: bookings } = useApi<CalendarBooking[]>(
+  const { data: bookingsResponse, loading: bookingsLoading, error: bookingsError } = useApi<{ data: CalendarBooking[]; total: number }>(
     venueId
       ? `/api/bookings?venueId=${venueId}&dateFrom=${weekStart}&dateTo=${weekEnd}`
       : "",
     [venueId, weekStart, weekEnd]
   );
+  const bookings = bookingsResponse?.data ?? null;
 
   const prevWeek = () => {
     const d = new Date(currentDate);
@@ -145,6 +146,18 @@ export default function CalendarPage() {
       </div>
 
       {/* Week header */}
+      {bookingsError && (
+        <div className="p-6 text-center text-red-500 bg-white rounded-xl border border-gray-200">
+          <p className="font-medium">Ошибка загрузки</p>
+          <p className="text-sm mt-1">{bookingsError}</p>
+        </div>
+      )}
+      {bookingsLoading && (
+        <div className="p-6 text-center text-gray-500 bg-white rounded-xl border border-gray-200">
+          <div className="inline-block h-6 w-6 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin mb-2" />
+          <p>Загрузка...</p>
+        </div>
+      )}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="grid grid-cols-[80px_repeat(7,1fr)]">
           <div className="bg-gray-50 border-b border-r border-gray-200 p-2" />

@@ -9,46 +9,70 @@ analyticsRouter.get("/sources", async (req, res) => {
     const period = parseInt(req.query.period as string) || 90;
     const since = new Date(Date.now() - period * 86400000);
 
-    const sources = await prisma.utmSource.groupBy({
-      by: ["source", "medium"],
+    // 1. Get all UTM records in a single query with distinct client IDs per source/medium
+    const utmRecords = await prisma.utmSource.findMany({
       where: { createdAt: { gte: since } },
-      _count: true,
+      select: { source: true, medium: true, clientId: true },
+      distinct: ["source", "medium", "clientId"],
     });
 
-    const enriched = await Promise.all(
-      sources.map(async (s) => {
-        const clients = await prisma.utmSource.findMany({
-          where: { source: s.source, medium: s.medium, createdAt: { gte: since } },
-          select: { clientId: true },
-          distinct: ["clientId"],
-        });
+    // 2. Build a map: "source|medium" -> Set<clientId>
+    const sourceClientMap = new Map<string, Set<string>>();
+    const allClientIds = new Set<string>();
 
-        const clientIds = clients.map((c) => c.clientId);
+    for (const record of utmRecords) {
+      const key = `${record.source}|${record.medium}`;
+      if (!sourceClientMap.has(key)) {
+        sourceClientMap.set(key, new Set());
+      }
+      sourceClientMap.get(key)!.add(record.clientId);
+      allClientIds.add(record.clientId);
+    }
 
-        const bookings = await prisma.booking.aggregate({
-          where: {
-            clientId: { in: clientIds },
-            status: "COMPLETED",
-          },
-          _count: true,
-          _sum: { finalPrice: true },
-        });
+    // 3. Fetch all completed bookings for these clients in a single query
+    const bookings = await prisma.booking.findMany({
+      where: {
+        clientId: { in: Array.from(allClientIds) },
+        status: "COMPLETED",
+      },
+      select: { clientId: true, finalPrice: true },
+    });
 
-        const totalRevenue = Number(bookings._sum.finalPrice || 0);
-        const totalClients = clientIds.length;
-        const totalBookings = bookings._count;
+    // 4. Build a map: clientId -> { count, revenue }
+    const clientBookingStats = new Map<string, { count: number; revenue: number }>();
+    for (const b of bookings) {
+      const existing = clientBookingStats.get(b.clientId) || { count: 0, revenue: 0 };
+      existing.count += 1;
+      existing.revenue += Number(b.finalPrice);
+      clientBookingStats.set(b.clientId, existing);
+    }
 
-        return {
-          source: s.source,
-          medium: s.medium,
-          clients: totalClients,
-          bookings: totalBookings,
-          conversionRate: totalClients > 0 ? (totalBookings / totalClients) * 100 : 0,
-          avgCheck: totalBookings > 0 ? totalRevenue / totalBookings : 0,
-          ltv: totalClients > 0 ? totalRevenue / totalClients : 0,
-        };
-      })
-    );
+    // 5. Aggregate per source/medium
+    const enriched = Array.from(sourceClientMap.entries()).map(([key, clientIds]) => {
+      const [source, medium] = key.split("|");
+      let totalBookings = 0;
+      let totalRevenue = 0;
+
+      for (const clientId of clientIds) {
+        const stats = clientBookingStats.get(clientId);
+        if (stats) {
+          totalBookings += stats.count;
+          totalRevenue += stats.revenue;
+        }
+      }
+
+      const totalClients = clientIds.size;
+
+      return {
+        source,
+        medium,
+        clients: totalClients,
+        bookings: totalBookings,
+        conversionRate: totalClients > 0 ? (totalBookings / totalClients) * 100 : 0,
+        avgCheck: totalBookings > 0 ? totalRevenue / totalBookings : 0,
+        ltv: totalClients > 0 ? totalRevenue / totalClients : 0,
+      };
+    });
 
     res.json(enriched);
   } catch (err) {

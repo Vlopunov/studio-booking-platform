@@ -71,7 +71,7 @@ export default function BookingDetailPage() {
   const router = useRouter();
   const bookingId = params.id as string;
 
-  const { data: booking, loading, refetch } = useApi<BookingDetail>(
+  const { data: booking, loading, error, refetch } = useApi<BookingDetail>(
     `/api/bookings/${bookingId}`
   );
 
@@ -105,12 +105,39 @@ export default function BookingDetailPage() {
     }
   };
 
-  if (loading || !booking) {
+  if (loading) {
     return (
       <div className="p-6">
         <div className="animate-pulse space-y-4">
           <div className="h-8 w-64 bg-gray-200 rounded" />
           <div className="h-64 bg-gray-200 rounded-xl" />
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="p-12 text-center text-red-500 bg-white rounded-xl border border-gray-200">
+          <p className="font-medium">Ошибка загрузки</p>
+          <p className="text-sm mt-1">{error}</p>
+          <button
+            onClick={() => router.push("/bookings")}
+            className="mt-4 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+          >
+            Назад к бронированиям
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!booking) {
+    return (
+      <div className="p-6">
+        <div className="p-12 text-center text-gray-500 bg-white rounded-xl border border-gray-200">
+          Бронирование не найдено
         </div>
       </div>
     );

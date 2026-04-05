@@ -1,5 +1,7 @@
 import "dotenv/config";
 import { Bot, session } from "grammy";
+import { RedisAdapter } from "@grammyjs/storage-redis";
+import IORedis from "ioredis";
 import { prisma } from "@studio/database";
 import { parseDeepLink, generateReferralCode } from "@studio/utils";
 import { registerMainMenu } from "./handlers/main-menu";
@@ -19,13 +21,16 @@ if (!BOT_TOKEN) throw new Error("BOT_TOKEN is required");
 
 const bot = new Bot<StudioContext>(BOT_TOKEN);
 
-// Session
+// FIX 5: Redis-backed session storage (survives restarts, scales across instances)
+const redis = new IORedis(process.env.REDIS_URL || "redis://localhost:6379");
+
 bot.use(
   session({
     initial: () => ({
       bookingStep: null as string | null,
       bookingData: {} as any,
     }),
+    storage: new RedisAdapter({ instance: redis }),
   })
 );
 
@@ -75,7 +80,7 @@ bot.use(async (ctx, next) => {
       book_venue: "booking.venue_selected",
       book_date: "booking.date_selected",
       cal: "booking.date_selected",
-      book_confirm: "booking.completed",
+      // book_confirm analytics handled by booking.service.ts
       waitlist: "waitlist.joined",
       referral: "referral.shared",
     };

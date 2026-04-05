@@ -1,6 +1,28 @@
 import { Router, Response } from "express";
+import { z } from "zod";
 import { prisma } from "@studio/database";
 import { AuthRequest } from "../middleware/auth";
+
+const createVenueSchema = z.object({
+  name: z.string().min(1).max(200),
+  slug: z.string().min(1).max(100).optional(),
+  description: z.string().optional(),
+  pricePerHour: z.number().min(0),
+  capacity: z.number().int().min(1).optional(),
+  minBookingHours: z.number().int().min(1).optional(),
+  maxBookingHours: z.number().int().min(1).optional(),
+  sortOrder: z.number().int().optional(),
+  schedules: z
+    .array(
+      z.object({
+        dayOfWeek: z.number().int().min(0).max(6),
+        openTime: z.string().regex(/^\d{2}:\d{2}$/),
+        closeTime: z.string().regex(/^\d{2}:\d{2}$/),
+        isActive: z.boolean(),
+      })
+    )
+    .optional(),
+});
 
 export const venuesRouter = Router();
 
@@ -22,6 +44,12 @@ venuesRouter.get("/", async (_req: AuthRequest, res: Response) => {
 // POST /api/venues
 venuesRouter.post("/", async (req: AuthRequest, res: Response) => {
   try {
+    const parsed = createVenueSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Validation failed", details: parsed.error.flatten() });
+      return;
+    }
+
     const { schedules, ...data } = req.body;
 
     const venue = await prisma.venue.create({

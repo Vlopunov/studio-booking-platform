@@ -9,7 +9,7 @@ import { clsx } from "clsx";
 
 export default function GiftCertificatesPage() {
   const [filter, setFilter] = useState("");
-  const { data, loading, refetch } = useApi<any>(
+  const { data, loading, error, refetch } = useApi<any>(
     `/api/gift-certificates?page=1&pageSize=50${filter ? `&status=${filter}` : ""}`
   );
   const { data: stats } = useApi<any>("/api/gift-certificates/stats/summary");
@@ -77,6 +77,13 @@ export default function GiftCertificatesPage() {
           </button>
         ))}
       </div>
+
+      {error && (
+        <div className="p-12 text-center text-red-500 bg-white rounded-xl border border-gray-200">
+          <p className="font-medium">Ошибка загрузки</p>
+          <p className="text-sm mt-1">{error}</p>
+        </div>
+      )}
 
       <DataTable
         loading={loading}
