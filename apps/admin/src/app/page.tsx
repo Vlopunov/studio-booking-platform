@@ -57,8 +57,8 @@ interface ReferralStats {
 
 /* ─── Helpers ─── */
 
-function formatCurrency(value: number): string {
-  return value.toLocaleString("ru-RU") + " \u20BD";
+function formatCurrency(value: number | undefined | null): string {
+  return (value ?? 0).toLocaleString("ru-RU") + " ₽";
 }
 
 function formatDate(dateStr: string): string {
@@ -251,9 +251,9 @@ export default function DashboardPage() {
                 <div className="flex items-start justify-between">
                   <div>
                     <p className="font-semibold text-gray-900">
-                      {booking.clientName}
+                      {bookingClientName(booking)}
                     </p>
-                    <p className="text-sm text-gray-600">{booking.venueName}</p>
+                    <p className="text-sm text-gray-600">{bookingVenueName(booking)}</p>
                   </div>
                   <StatusBadge status="PENDING" />
                 </div>
@@ -264,7 +264,7 @@ export default function DashboardPage() {
                   </span>
                 </div>
                 <p className="text-lg font-bold text-gray-900">
-                  {formatCurrency(booking.totalPrice)}
+                  {formatCurrency(bookingPrice(booking))}
                 </p>
                 <div className="flex gap-2 pt-1">
                   <button
