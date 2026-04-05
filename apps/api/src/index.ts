@@ -24,11 +24,15 @@ import { adminsRouter } from "./routes/admins";
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+// Trust proxy (Railway runs behind a reverse proxy)
+app.set("trust proxy", 1);
+
 const generalLimiter = rateLimit({
   windowMs: 60_000,
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { trustProxy: false },
 });
 
 const authLimiter = rateLimit({
@@ -36,6 +40,7 @@ const authLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { trustProxy: false },
   message: { error: "Too many authentication attempts, please try again later" },
 });
 
